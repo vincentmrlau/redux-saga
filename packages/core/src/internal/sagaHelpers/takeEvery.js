@@ -1,6 +1,5 @@
-import fsmIterator, { qEnd, safeName } from './fsmIterator'
+import fsmIterator, { safeName } from './fsmIterator'
 import { take, fork } from '../io'
-import { END } from '../channel'
 
 export default function takeEvery(patternOrChannel, worker, ...args) {
   const yTake = { done: false, value: take(patternOrChannel) }
@@ -12,10 +11,10 @@ export default function takeEvery(patternOrChannel, worker, ...args) {
   return fsmIterator(
     {
       q1() {
-        return ['q2', yTake, setAction]
+        return { nextState: 'q2', effect: yTake, stateUpdater: setAction }
       },
       q2() {
-        return action === END ? [qEnd] : ['q1', yFork(action)]
+        return { nextState: 'q1', effect: yFork(action) }
       },
     },
     'q1',

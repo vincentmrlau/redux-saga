@@ -6,7 +6,7 @@ asserting the side effects.
 ## Testing the Saga Generator Function
 
 Suppose we have the following actions:
- 
+
 ```javascript
 const CHOOSE_COLOR = 'CHOOSE_COLOR';
 const CHANGE_UI = 'CHANGE_UI';
@@ -35,7 +35,7 @@ function* changeColorSaga() {
 }
 ```
 
-Since Sagas always yield an Effect, and these effects have simple factory functions (e.g. put, take etc.) a test may
+Since Sagas always yield an Effect, and these effects have basic factory functions (e.g. put, take etc.) a test may
 inspect the yielded effect and compare it to an expected effect. To get the first yielded value from a saga,
 call its `next().value`:
 
@@ -70,7 +70,7 @@ Since there are no more `yield`s, then next time `next()` is called, the generat
   );
 ```
 
-### Branching Saga 
+### Branching Saga
 
 Sometimes your saga will have different outcomes. To test the different branches without repeating all the steps that lead to it you can use the utility function **cloneableGenerator**
 
@@ -88,7 +88,7 @@ const chooseNumber = (number) => ({
 });
 
 const doStuff = () => ({
-  type: DO_STUFF, 
+  type: DO_STUFF,
 });
 ```
 
@@ -112,7 +112,7 @@ The test is as follows:
 
 ```javascript
 import { put, take } from 'redux-saga/effects';
-import { cloneableGenerator } from 'redux-saga/utils';
+import { cloneableGenerator } from '@redux-saga/testing-utils';
 
 test('doStuffThenChangeColor', assert => {
   const gen = cloneableGenerator(doStuffThenChangeColor)();
@@ -164,7 +164,7 @@ See also: [Task cancellation](TaskCancellation.md) for testing fork effects
 Although it may be useful to test each step of a saga, in practise this makes for brittle tests. Instead, it may be
 preferable to run the whole saga and assert that the expected effects have occurred.
 
-Suppose we have a simple saga which calls an HTTP API:
+Suppose we have a basic saga which calls an HTTP API:
 
 ```javascript
 function* callApi(url) {
@@ -238,7 +238,7 @@ import fromGenerator from 'redux-saga-test';
 
 test('with redux-saga-test', () => {
   const generator = callApi('url');
-  /* 
+  /*
   * The assertions passed to fromGenerator
   * requires a `deepEqual` method
   */
@@ -262,7 +262,7 @@ test('with redux-saga-testing', () => {
     // with Jest's `expect`
     expect(selectResult).toBe(value);
   });
-  
+
   it('should select from state', apiResponse => {
     // without tape's `test`
     assert.deepEqual(apiResponse.json(), jsonResponse);
@@ -286,7 +286,7 @@ test('exact order with redux-saga-test-plan', () => {
     .select(selectFromState)
     .next()
     .call(myApi, 'url', valueFromSelect);
-    
+
     ...
 });
 
@@ -298,14 +298,14 @@ test('recorded effects with redux-saga-test-plan', () => {
   */
   return expectSaga(callApi, 'url')
     .put(success(value)) // last effect from our saga, first one tested
-    
+
     .call(myApi, 'url', value)
     .run();
     /* notice no assertion for the select call */
 });
 
 test('test only final effect with .provide()', () => {
-  /* 
+  /*
   * With the .provide() method from expectSaga
   * you can by pass in all expected values
   * and test only your saga's final effect.
@@ -366,7 +366,7 @@ test('testing with redux-saga-test-engine', () => {
     // Here it is our URL, but typically would be the dispatched action
     'url'
   );
-  
+
   // assert that the effects you care about occurred as expected, in order
   assert.equal(actualEffects[0], call(myApi, 'url', selectedValue));
   assert.equal(actualEffects[1], put(success, response));
@@ -404,8 +404,7 @@ test('with redux-saga-tester', () => {
 ```
 
 ## `effectMiddlwares`
-
-This is a feature currently in the v1.0.0-beta release. This would provide a native way to perform integration like testing without one of the above libraries.
+Provides a native way to perform integration like testing without one of the above libraries.
 
 The idea is that you can create a real redux store with saga middleware in your test file. The saga middlware takes an object as an argument. That object would have an `effectMiddlewares` value: a function where you can intercept/hijack any effect and resolve it on your own - passing it very redux-style to the next middleware.
 

@@ -8,8 +8,7 @@ In this section, we'll see:
 
 - How to use the `eventChannel` factory function to connect `take` Effects to external event sources.
 
-- How to create a channel using the generic `channel` factory function and use it in `take`/`put` Effects to
-communicate between two Sagas.
+- How to create a channel using the generic `channel` factory function and use it in `take`/`put` Effects to communicate between two Sagas.
 
 ## Using the `actionChannel` Effect
 
@@ -77,7 +76,7 @@ function* watchRequests() {
 
 Like `actionChannel` (Effect), `eventChannel` (a factory function, not an Effect) creates a Channel for events but from event sources other than the Redux Store.
 
-This simple example creates a Channel from an interval:
+This basic example creates a Channel from an interval:
 
 ```javascript
 import { eventChannel, END } from 'redux-saga'
@@ -131,7 +130,7 @@ export function* saga() {
 }
 ```
 
-So the Saga is yielding a `take(chan)`. This causes the Saga to block until a message is put on the channel. In our example above, it corresponds to when we invoke `emitter(secs)`. Note also we're executing the whole `while (true) {...}` loop inside a `try/finally` block. When the interval terminates, the countdown function closes the event channel by invoking `emitter(END)`. Closing a channel has the effect of terminating all Sagas blocked on a `take` from that channel. In our example, terminating the Saga will cause it to jump to its `finally` block (if provided, otherwise the Saga simply terminates).
+So the Saga is yielding a `take(chan)`. This causes the Saga to block until a message is put on the channel. In our example above, it corresponds to when we invoke `emitter(secs)`. Note also we're executing the whole `while (true) {...}` loop inside a `try/finally` block. When the interval terminates, the countdown function closes the event channel by invoking `emitter(END)`. Closing a channel has the effect of terminating all Sagas blocked on a `take` from that channel. In our example, terminating the Saga will cause it to jump to its `finally` block (if provided, otherwise the Saga terminates).
 
 The subscriber returns an `unsubscribe` function. This is used by the channel to unsubscribe before the event source complete. Inside a Saga consuming messages from an event channel, if we want to *exit early* before the event source complete (e.g. Saga has been cancelled) you can call `chan.close()` to close the channel and unsubscribe from the source.
 
@@ -181,9 +180,15 @@ function createSocketChannel(socket) {
       // this allows a Saga to take this payload from the returned channel
       emit(event.payload)
     }
-
+    
+    const errorHandler = (errorEvent) => {
+      // create an Error object and put it into the channel
+      emit(new Error(errorEvent.reason))
+    }
+    
     // setup the subscription
     socket.on('ping', pingHandler)
+    socket.on('error', errorHandler)
 
     // the subscriber must return an unsubscribe function
     // this will be invoked when the saga calls `channel.close` method
@@ -206,15 +211,25 @@ export function* watchOnPings() {
   const socketChannel = yield call(createSocketChannel, socket)
 
   while (true) {
-    const payload = yield take(socketChannel)
-    yield put({ type: INCOMING_PONG_PAYLOAD, payload })
-    yield fork(pong, socket)
+    try {
+      // An error from socketChannel will cause the saga jump to the catch block
+      const payload = yield take(socketChannel)
+      yield put({ type: INCOMING_PONG_PAYLOAD, payload })
+      yield fork(pong, socket)
+    } catch(err) {
+      console.error('socket error:', err)
+      // socketChannel is still open in catch block
+      // if we want end the socketChannel, we need close it explicitly
+      // socketChannel.close()
+    }
   }
 }
 ```
 
 > Note: messages on an eventChannel are not buffered by default. You have to provide a buffer to the eventChannel factory in order to specify buffering strategy for the channel (e.g. `eventChannel(subscriber, buffer)`).
 [See the API docs](../api#buffers) for more info.
+
+In this WebSocket example, the socketChannel may emit an error when some socket error occurs, this will abort our `yield take(socketChannel)` waiting on this eventChannel. Note that emitting an error will not abort the channel by default, we need to close the channel explicitly if we want to end the channel after an error.
 
 ### Using channels to communicate between Sagas
 
@@ -270,6 +285,6 @@ function* handleRequest(chan) {
 
 In the above example, we create a channel using the `channel` factory. We get back a channel which by default buffers all messages we put on it (unless there is a pending taker, in which the taker is resumed immediately with the message).
 
-The `watchRequests` saga then forks three worker sagas. Note the created channel is supplied to all forked sagas. `watchRequests` will use this channel to *dispatch* work to the three worker sagas. On each `REQUEST` action the Saga will simply put the payload on the channel. The payload will then be taken by any *free* worker. Otherwise it will be queued by the channel until a worker Saga is ready to take it.
+The `watchRequests` saga then forks three worker sagas. Note the created channel is supplied to all forked sagas. `watchRequests` will use this channel to *dispatch* work to the three worker sagas. On each `REQUEST` action the Saga will put the payload on the channel. The payload will then be taken by any *free* worker. Otherwise it will be queued by the channel until a worker Saga is ready to take it.
 
 All the three workers run a typical while loop. On each iteration, a worker will take the next request, or will block until a message is available. Note that this mechanism provides an automatic load-balancing between the 3 workers. Rapid workers are not slowed down by slow workers.

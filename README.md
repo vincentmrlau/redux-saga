@@ -10,7 +10,7 @@
 [![OpenCollective](https://opencollective.com/redux-saga/backers/badge.svg)](#backers)
 [![OpenCollective](https://opencollective.com/redux-saga/sponsors/badge.svg)](#sponsors)
 
-`redux-saga` is a library that aims to make application side effects (i.e. asynchronous things like data fetching and impure things like accessing the browser cache) easier to manage, more efficient to execute, simple to test, and better at handling failures.
+`redux-saga` is a library that aims to make application side effects (i.e. asynchronous things like data fetching and impure things like accessing the browser cache) easier to manage, more efficient to execute, easy to test, and better at handling failures.
 
 The mental model is that a saga is like a separate thread in your application that's solely responsible for side effects. `redux-saga` is a redux middleware, which means this thread can be started, paused and cancelled from the main application with normal redux actions, it has access to the full redux application state and it can dispatch redux actions as well.
 
@@ -175,7 +175,7 @@ There are three counter examples.
 
 Demo using vanilla JavaScript and UMD builds. All source is inlined in `index.html`.
 
-To launch the example, just open `index.html` in your browser.
+To launch the example, open `index.html` in your browser.
 
 > Important: your browser must support Generators. Latest versions of Chrome/Firefox/Edge are suitable.
 
@@ -234,7 +234,13 @@ Check your `tsconfig.json` file, and the official <a href="https://www.typescrip
 You can find the official Redux-Saga logo with different flavors in the [logo directory](https://github.com/redux-saga/redux-saga/tree/master/logo).
 
 
-### Backers
+## Redux Saga chooses generators over `async/await`
+
+A [few](https://github.com/redux-saga/redux-saga/issues/1373#issuecomment-381320534) [issues](https://github.com/redux-saga/redux-saga/issues/987#issuecomment-301039792) have been raised asking whether Redux saga plans to use `async/await` syntax instead of generators.
+
+We will continue to use [generators](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator). The primary mechanism of `async/await` is Promises and it is very difficult to retain the scheduling simplicity and semantics of existing Saga concepts using Promises. `async/await` simply don't allow for certain things - like i.e. cancellation. With generators we have full power over how & when effects are executed.
+
+## Backers
 Support us with a monthly donation and help us continue our activities. \[[Become a backer](https://opencollective.com/redux-saga#backer)\]
 
 <a href="https://opencollective.com/redux-saga/backer/0/website" target="_blank"><img src="https://opencollective.com/redux-saga/backer/0/avatar.svg"></a>

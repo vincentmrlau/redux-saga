@@ -3,36 +3,37 @@
 * [`Middleware API`](#middleware-api)
   * [`createSagaMiddleware(options)`](#createsagamiddlewareoptions)
   * [`middleware.run(saga, ...args)`](#middlewarerunsaga-args)
-* [`Saga Helpers`](#saga-helpers)
+* [`Effect creators`](#effect-creators)
+  * [`take(pattern)`](#takepattern)
+  * [`takeMaybe(pattern)`](#takemaybepattern)
+  * [`take(channel)`](#takechannel)
+  * [`takeMaybe(channel)`](#takemaybechannel)
   * [`takeEvery(pattern, saga, ...args)`](#takeeverypattern-saga-args)
   * [`takeEvery(channel, saga, ...args)`](#takeeverychannel-saga-args)
   * [`takeLatest(pattern, saga, ..args)`](#takelatestpattern-saga-args)
   * [`takeLatest(channel, saga, ..args)`](#takelatestchannel-saga-args)
   * [`takeLeading(pattern, saga, ..args)`](#takeleadingpattern-saga-args)
   * [`takeLeading(channel, saga, ..args)`](#takeleadingchannel-saga-args)
-  * [`throttle(ms, pattern, saga, ..args)`](#throttlems-pattern-saga-args)
-* [`Effect creators`](#effect-creators)
-  * [`take(pattern)`](#takepattern)
-  * [`take.maybe(pattern)`](#takemaybepattern)
-  * [`take(channel)`](#takechannel)
-  * [`take.maybe(channel)`](#takemaybechannel)
   * [`put(action)`](#putaction)
-  * [`put.resolve(action)`](#putresolveaction)
+  * [`putResolve(action)`](#putresolveaction)
   * [`put(channel, action)`](#putchannel-action)
   * [`call(fn, ...args)`](#callfn-args)
   * [`call([context, fn], ...args)`](#callcontext-fn-args)
   * [`call([context, fnName], ...args)`](#callcontext-fnname-args)
+  * [`call({context, fn}, ...args)`](#callcontext-fn-args-1)
   * [`apply(context, fn, args)`](#applycontext-fn-args)
   * [`cps(fn, ...args)`](#cpsfn-args)
   * [`cps([context, fn], ...args)`](#cpscontext-fn-args)
+  * [`cps({context, fn}, ...args)`](#cpscontext-fn-args-1)
   * [`fork(fn, ...args)`](#forkfn-args)
   * [`fork([context, fn], ...args)`](#forkcontext-fn-args)
+  * [`fork({context, fn}, ...args)`](#forkcontext-fn-args-1)
   * [`spawn(fn, ...args)`](#spawnfn-args)
   * [`spawn([context, fn], ...args)`](#spawncontext-fn-args)
   * [`join(task)`](#jointask)
-  * [`join(...tasks)`](#jointasks)
+  * [`join([...tasks])`](#jointasks)
   * [`cancel(task)`](#canceltask)
-  * [`cancel(...tasks)`](#canceltasks)
+  * [`cancel([...tasks])`](#canceltasks)
   * [`cancel()`](#cancel)
   * [`select(selector, ...args)`](#selectselector-args)
   * [`actionChannel(pattern, [buffer])`](#actionchannelpattern-buffer)
@@ -40,6 +41,12 @@
   * [`cancelled()`](#cancelled)
   * [`setContext(props)`](#setcontextprops)
   * [`getContext(prop)`](#getcontextprop)
+  * [`delay(ms, [val])`](#delayms-val)
+  * [`throttle(ms, pattern, saga, ..args)`](#throttlems-pattern-saga-args)
+  * [`throttle(ms, channel, saga, ..args)`](#throttlems-channel-saga-args)
+  * [`debounce(ms, pattern, saga, ..args)`](#debouncems-pattern-saga-args)
+  * [`debounce(ms, channel, saga, ..args)`](#debouncems-channel-saga-args)
+  * [`retry(maxTries, delay, fn, ...args)`](#retrymaxtries-delay-fn-args)
 * [`Effect combinators`](#effect-combinators)
   * [`race(effects)`](#raceeffects)
   * [`race([...effects])`](#raceeffects-with-array)
@@ -56,7 +63,6 @@
   * [`channel([buffer])`](#channelbuffer)
   * [`eventChannel(subscribe, [buffer], matcher)`](#eventchannelsubscribe-buffer-matcher)
   * [`buffers`](#buffers)
-  * [`delay(ms, [val])`](#delayms-val)
   * [`cloneableGenerator(generatorFunc)`](#cloneablegeneratorgeneratorfunc)
   * [`createMockTask()`](#createmocktask)
 
@@ -72,31 +78,13 @@
 Creates a Redux middleware and connects the Sagas to the Redux Store
 
 - `options: Object` - A list of options to pass to the middleware. Currently supported options are:
+  - `context: Object` - initial value of the saga's context.
 
   - `sagaMonitor` : [SagaMonitor](#sagamonitor) - If a Saga Monitor is provided, the middleware will deliver monitoring events to the monitor.
 
- - `emitter` : Used to feed actions from redux to redux-saga (through redux middleware). Emitter is a higher order function, which takes a builtin emitter and returns another emitter.
+  - `onError: (error: Error, { sagaStack: string })` - if provided, the middleware will call it with uncaught errors from Sagas. useful for sending uncaught exceptions to error tracking services.
+  - `effectMiddlewares` : Function [] - allows you to intercept any effect, resolve it on your own and pass to the next middleware. See [this section](/docs/advanced/Testing.md#effectmiddlwares) for a detailed example
 
-      **Example**
-
-      In the following example we create an emitter which "unpacks" array of actions and emits individual actions extracted from the array.
-
-     ```javascript
-     createSagaMiddleware({
-       emitter: emit => action => {
-        if (Array.isArray(action)) {
-          action.forEach(emit);
-          return
-        }
-        emit(action);
-       }
-     });
-     ```
-
-  - `logger` : Function -  defines a custom logger for the middleware. By default, the middleware logs all errors and
-warnings to the console. This option tells the middleware to send errors/warnings to the provided logger instead. The logger is called with the params `(level, ...args)`. The 1st indicates the level of the log ('info', 'warning' or 'error'). The rest corresponds to the following arguments (You can use `args.join(' ')` to concatenate all args into a single String).
-
-  - `onError` : Function - if provided, the middleware will call it with uncaught errors from Sagas. useful for sending uncaught exceptions to error tracking services.
 
 #### Example
 
@@ -152,10 +140,54 @@ If the execution results in an error (as specified by each Effect creator) then 
 
 In the case a Saga is cancelled (either manually or using the provided Effects), the middleware will invoke `return()` method of the Generator. This will cause the Generator to skip directly to the finally block.
 
-## Saga Helpers
+## Effect creators
 
-> Note: the following functions are helper functions built on top of the Effect creators
-below.
+> Notes:
+
+> - Each function below returns a plain JavaScript object and does not perform any execution.
+> - The execution is performed by the middleware during the Iteration process described above.
+> - The middleware examines each Effect description and performs the appropriate action.
+
+### `take(pattern)`
+
+Creates an Effect description that instructs the middleware to wait for a specified action on the Store.
+The Generator is suspended until an action that matches `pattern` is dispatched.
+
+The result of `yield take(pattern)` is an action object being dispatched.
+
+`pattern` is interpreted using the following rules:
+
+- If `take` is called with no arguments or `'*'` all dispatched actions are matched (e.g. `take()` will match all actions)
+
+- If it is a function, the action is matched if `pattern(action)` is true (e.g. `take(action => action.entities)` will match all actions having a (truthy) `entities` field.)
+> Note: if the pattern function has `toString` defined on it, `action.type` will be tested against `pattern.toString()` instead. This is useful if you're using an action creator library like redux-act or redux-actions.
+
+- If it is a String, the action is matched if `action.type === pattern` (e.g. `take(INCREMENT_ASYNC)`
+
+- If it is an array, each item in the array is matched with aforementioned rules, so the mixed array of strings and function predicates is supported. The most common use case is an array of strings though, so that `action.type` is matched against all items in the array (e.g. `take([INCREMENT, DECREMENT])` and that would match either actions of type `INCREMENT` or `DECREMENT`).
+
+The middleware provides a special action `END`. If you dispatch the END action, then all Sagas blocked on a take Effect will be terminated regardless of the specified pattern. If the terminated Saga has still some forked tasks which are still running, it will wait for all the child tasks to terminate before terminating the Task.
+
+### `takeMaybe(pattern)`
+
+Same as `take(pattern)` but does not automatically terminate the Saga on an `END` action. Instead all Sagas blocked on a take Effect will get the `END` object.
+
+#### Notes
+
+`takeMaybe` got its name from the FP analogy - it's like instead of having a return type of `ACTION` (with automatic handling) we can have a type of `Maybe(ACTION)` so we can handle both cases:
+
+- case when there is a `Just(ACTION)` (we have an action)
+- the case of `NOTHING` (channel was closed*). i.e. we need some way to map over `END`
+
+* internally all `dispatch`ed actions are going through the `stdChannel` which is getting closed when `dispatch(END)` happens
+
+### `take(channel)`
+
+Creates an Effect description that instructs the middleware to wait for a specified message from the provided Channel. If the channel is already closed, then the Generator will immediately terminate following the same process described above for `take(pattern)`.
+
+### `takeMaybe(channel)`
+
+Same as `take(channel)` but does not automatically terminate the Saga on an `END` action. Instead all Sagas blocked on a take Effect will get the `END` object. See more [here](#takemaybepattern)
 
 ### `takeEvery(pattern, saga, ...args)`
 
@@ -169,7 +201,7 @@ Spawns a `saga` on each action dispatched to the Store that matches `pattern`.
 
 #### Example
 
-In the following example, we create a simple task `fetchUser`. We use `takeEvery` to start a new `fetchUser` task on each dispatched `USER_REQUESTED` action:
+In the following example, we create a basic task `fetchUser`. We use `takeEvery` to start a new `fetchUser` task on each dispatched `USER_REQUESTED` action:
 
 ```javascript
 import { takeEvery } from `redux-saga/effects`
@@ -212,7 +244,7 @@ You can also pass in a channel as argument and the behaviour is the same as [tak
 ### `takeLatest(pattern, saga, ...args)`
 
 Spawns a `saga` on each action dispatched to the Store that matches `pattern`. And automatically cancels
-any previous `saga` task started previous if it's still running.
+any previous `saga` task started previously if it's still running.
 
 Each time an action is dispatched to the store. And if this action matches `pattern`, `takeLatest`
 starts a new `saga` task in the background. If a `saga` task was started previously (on the last action dispatched
@@ -227,7 +259,7 @@ incoming action to the argument list (i.e. the action will be the last argument 
 
 #### Example
 
-In the following example, we create a simple task `fetchUser`. We use `takeLatest` to
+In the following example, we create a basic task `fetchUser`. We use `takeLatest` to
 start a new `fetchUser` task on each dispatched `USER_REQUESTED` action. Since `takeLatest`
 cancels any pending task started previously, we ensure that if a user triggers multiple consecutive
 `USER_REQUESTED` actions rapidly, we'll only conclude with the latest action
@@ -281,7 +313,7 @@ incoming action to the argument list (i.e. the action will be the last argument 
 
 #### Example
 
-In the following example, we create a simple task `fetchUser`. We use `takeLeading` to
+In the following example, we create a basic task `fetchUser`. We use `takeLeading` to
 start a new `fetchUser` task on each dispatched `USER_REQUESTED` action. Since `takeLeading`
 ignores any new coming task after it's started, we ensure that if a user triggers multiple consecutive
 `USER_REQUESTED` actions rapidly, we'll only keep on running with the leading action
@@ -313,102 +345,7 @@ const takeLeading = (patternOrChannel, saga, ...args) => fork(function*() {
 
 ### `takeLeading(channel, saga, ...args)`
 
-You can also pass in a channel as argument and the behaviour is the same as [takeLeading(pattern, saga, ...args)](#takeleadingpattern-saga-args).
-
-### `throttle(ms, pattern, saga, ...args)`
-
-Spawns a `saga` on an action dispatched to the Store that matches `pattern`. After spawning a task it's still accepting incoming actions into the underlaying `buffer`, keeping at most 1 (the most recent one), but in the same time holding up with spawning new task for `ms` milliseconds (hence its name - `throttle`). Purpose of this is to ignore incoming actions for a given period of time while processing a task.
-
-- `ms: Number` - length of a time window in milliseconds during which actions will be ignored after the action starts processing
-
-- `pattern: String | Array | Function` - for more information see docs for [`take(pattern)`](#takepattern)
-
-- `saga: Function` - a Generator function
-
-- `args: Array<any>` - arguments to be passed to the started task. `throttle` will add the
-incoming action to the argument list (i.e. the action will be the last argument provided to `saga`)
-
-#### Example
-
-In the following example, we create a simple task `fetchAutocomplete`. We use `throttle` to
-start a new `fetchAutocomplete` task on dispatched `FETCH_AUTOCOMPLETE` action. However since `throttle` ignores consecutive `FETCH_AUTOCOMPLETE` for some time, we ensure that user won't flood our server with requests.
-
-```javascript
-import { call, put, throttle } from `redux-saga/effects`
-
-function* fetchAutocomplete(action) {
-  const autocompleteProposals = yield call(Api.fetchAutocomplete, action.text)
-  yield put({type: 'FETCHED_AUTOCOMPLETE_PROPOSALS', proposals: autocompleteProposals})
-}
-
-function* throttleAutocomplete() {
-  yield throttle(1000, 'FETCH_AUTOCOMPLETE', fetchAutocomplete)
-}
-```
-
-#### Notes
-
-`throttle` is a high-level API built using `take`, `fork` and `actionChannel`. Here is how the helper could be implemented using the low-level Effects
-
-```javascript
-const throttle = (ms, pattern, task, ...args) => fork(function*() {
-  const throttleChannel = yield actionChannel(pattern)
-
-  while (true) {
-    const action = yield take(throttleChannel)
-    yield fork(task, ...args, action)
-    yield delay(ms)
-  }
-})
-
-```
-
-## Effect creators
-
-> Notes:
-
-> - Each function below returns a plain JavaScript object and does not perform any execution.
-> - The execution is performed by the middleware during the Iteration process described above.
-> - The middleware examines each Effect description and performs the appropriate action.
-
-### `take(pattern)`
-
-Creates an Effect description that instructs the middleware to wait for a specified action on the Store.
-The Generator is suspended until an action that matches `pattern` is dispatched.
-
-`pattern` is interpreted using the following rules:
-
-- If `take` is called with no arguments or `'*'` all dispatched actions are matched (e.g. `take()` will match all actions)
-
-- If it is a function, the action is matched if `pattern(action)` is true (e.g. `take(action => action.entities)` will match all actions having a (truthy) `entities`field.)
-> Note: if the pattern function has `toString` defined on it, `action.type` will be tested against `pattern.toString()` instead. This is useful if you're using an action creator library like redux-act or redux-actions.
-
-- If it is a String, the action is matched if `action.type === pattern` (e.g. `take(INCREMENT_ASYNC)`
-
-- If it is an array, each item in the array is matched with beforementioned rules, so the mixed array of strings and function predicates is supported. The most common use case is an array of strings though, so that `action.type` is matched against all items in the array (e.g. `take([INCREMENT, DECREMENT])` and that would match either actions of type `INCREMENT` or `DECREMENT`).
-
-The middleware provides a special action `END`. If you dispatch the END action, then all Sagas blocked on a take Effect will be terminated regardless of the specified pattern. If the terminated Saga has still some forked tasks which are still running, it will wait for all the child tasks to terminate before terminating the Task.
-
-### `take.maybe(pattern)`
-
-Same as `take(pattern)` but does not automatically terminate the Saga on an `END` action. Instead all Sagas blocked on a take Effect will get the `END` object.
-
-#### Notes
-
-`take.maybe` got it name from the FP analogy - it's like instead of having a return type of `ACTION` (with automatic handling) we can have a type of `Maybe(ACTION)` so we can handle both cases:
-
-- case when there is a `Just(ACTION)` (we have an action)
-- the case of `NOTHING` (channel was closed*). i.e. we need some way to map over `END`
-
-* internally all `dispatch`ed actions are going through the `stdChannel` which is geting closed when `dispatch(END)` happens
-
-### `take(channel)`
-
-Creates an Effect description that instructs the middleware to wait for a specified message from the provided Channel. If the channel is already closed, then the Generator will immediately terminate following the same process described above for `take(pattern)`.
-
-### `take.maybe(channel)`
-
-Same as `take(channel)` but does not automatically terminate the Saga on an `END` action. Instead all Sagas blocked on a take Effect will get the `END` object. See more [here](#takemaybepattern)
+You can also pass in a channel as argument and the behavior is the same as [takeLeading(pattern, saga, ...args)](#takeleadingpattern-saga-args).
 
 ### `put(action)`
 
@@ -418,7 +355,7 @@ not bubble back into the saga.
 
 - `action: Object` - [see Redux `dispatch` documentation for complete info](http://redux.js.org/docs/api/Store.html#dispatch)
 
-### `put.resolve(action)`
+### `putResolve(action)`
 
 Just like [`put`](#putaction) but the effect is blocking (if promise is returned from `dispatch` it will wait for its resolution) and will bubble up errors from downstream.
 
@@ -453,14 +390,14 @@ suspended until the child Generator terminates normally, in which case the paren
 is resumed with the value returned by the child Generator. Or until the child aborts with some
 error, in which case an error will be thrown inside the parent Generator.
 
-If the result is a Promise, the middleware will suspend the Generator until the Promise is
-resolved, in which case the Generator is resumed with the resolved value. or until the Promise
-is rejected, in which case an error is thrown inside the Generator.
+If `fn` is a normal function and returns a Promise, the middleware will suspend the Generator until the Promise is
+settled. After the promise is resolved the Generator is resumed with the resolved value, or if the Promise
+is rejected an error is thrown inside the Generator.
 
 If the result is not an Iterator object nor a Promise, the middleware will immediately return that value back to the saga,
 so that it can resume its execution synchronously.
 
-When an error is thrown inside the Generator. If it has a `try/catch` block surrounding the
+When an error is thrown inside the Generator, if it has a `try/catch` block surrounding the
 current `yield` instruction, the control will be passed to the `catch` block. Otherwise,
 the Generator aborts with the raised error, and if this Generator was called by another
 Generator, the error will propagate to the calling Generator.
@@ -473,6 +410,10 @@ invoke object methods.
 ### `call([context, fnName], ...args)`
 
 Same as `call([context, fn], ...args)` but supports passing a `fn` as string. Useful for invoking object's methods, i.e. `yield call([localStorage, 'getItem'], 'redux-saga')`
+
+### `call({context, fn}, ...args)`
+
+Same as `call([context, fn], ...args)` but supports passing `context` and `fn` as properties of an object, i.e. `yield call({context: localStorage, fn: localStorage.getItem}, 'redux-saga')`. `fn` can be a string or a function.
 
 ### `apply(context, fn, [args])`
 
@@ -501,6 +442,10 @@ The middleware remains suspended until `fn` terminates.
 
 Supports passing a `this` context to `fn` (object method invocation)
 
+### `cps({context, fn}, ...args)`
+
+Same as `cps([context, fn], ...args)` but supports passing `context` and `fn` as properties of an object. `fn` can be a string or a function.
+
 ### `fork(fn, ...args)`
 
 Creates an Effect description that instructs the middleware to perform a *non-blocking call* on `fn`
@@ -512,7 +457,7 @@ Creates an Effect description that instructs the middleware to perform a *non-bl
 
 returns a [Task](#task) object.
 
-#### Note
+#### Notes
 
 `fork`, like `call`, can be used to invoke both normal and Generator functions. But, the calls are
 non-blocking, the middleware doesn't suspend the Generator while waiting for the result of `fn`.
@@ -526,6 +471,7 @@ methods and properties.
 All forked tasks are *attached* to their parents. When the parent terminates the execution of its
 own body of instructions, it will wait for all forked tasks to terminate before returning.
 
+#### Error propagation
 Errors from child tasks automatically bubble up to their parents. If any forked task raises an uncaught error, then
 the parent task will abort with the child Error, and the whole Parent's execution tree (i.e. forked tasks + the
 *main task* represented by the parent's body if it's still running) will be cancelled.
@@ -535,13 +481,17 @@ also cancel the current Effect where the cancelled task was blocked (if any).
 
 If a forked task fails *synchronously* (ie: fails immediately after its execution before performing any
 async operation), then no Task is returned, instead the parent will be aborted as soon as possible (since both
-parent and child executes in parallel, the parent will abort as soon as it takes notice of the child failure).
+parent and child execute in parallel, the parent will abort as soon as it takes notice of the child failure).
 
 To create *detached* forks, use `spawn` instead.
 
 ### `fork([context, fn], ...args)`
 
 Supports invoking forked functions with a `this` context
+
+### `fork({context, fn}, ...args)`
+
+Same as `fork([context, fn], ...args)` but supports passing `context` and `fn` as properties of an object. `fn` can be a string or a function.
 
 ### `spawn(fn, ...args)`
 
@@ -566,7 +516,7 @@ of a previously forked task.
 task is cancelled, the cancellation will also propagate to the Saga executing the join
 effect. Similarly, any potential callers of those joiners will be cancelled as well.
 
-### `join(...tasks)`
+### `join([...tasks])`
 
 Creates an Effect description that instructs the middleware to wait for the results of previously forked tasks.
 
@@ -574,7 +524,7 @@ Creates an Effect description that instructs the middleware to wait for the resu
 
 #### Notes
 
-It simply wraps the array of tasks in [join effects](#jointask), roughly becoming the equivalent of
+It wraps the array of tasks in [join effects](#jointask), roughly becoming the equivalent of
 `yield tasks.map(t => join(t))`.
 
 ### `cancel(task)`
@@ -630,7 +580,7 @@ function* mySaga() {
 
 redux-saga will automatically cancel jqXHR objects using their `abort` method.
 
-### `cancel(...tasks)`
+### `cancel([...tasks])`
 
 Creates an Effect description that instructs the middleware to cancel previously forked tasks.
 
@@ -638,12 +588,12 @@ Creates an Effect description that instructs the middleware to cancel previously
 
 #### Notes
 
-It simply wraps the array of tasks in [cancel effects](#canceltask), roughly becoming the equivalent of
+It wraps the array of tasks in [cancel effects](#canceltask), roughly becoming the equivalent of
 `yield tasks.map(t => cancel(t))`.
 
 ### `cancel()`
 
-Creates an Effect description that instructs the middleware to cancel a task in which it has been yielded (self cancellation).
+Creates an Effect description that instructs the middleware to cancel a task in which it has been yielded (self-cancellation).
 It allows to reuse destructor-like logic inside a `finally` blocks for both outer (`cancel(task)`) and self (`cancel()`) cancellations.
 
 #### Example
@@ -744,7 +694,7 @@ Creates an effect that instructs the middleware to queue the actions matching `p
 
 #### Example
 
-The following code creates channel to buffer all `USER_REQUEST` actions. Note that even the Saga maybe blocked
+The following code creates a channel to buffer all `USER_REQUEST` actions. Note that even the Saga may be blocked
 on the `call` effect. All actions that come while it's blocked are automatically buffered. This causes the Saga
 to execute the API calls one at a time
 
@@ -810,12 +760,157 @@ function* saga() {
 
 ### `setContext(props)`
 
-Creates an effect that instructs the middleware to update it's own context. This effect extends
+Creates an effect that instructs the middleware to update its own context. This effect extends
 saga's context instead of replacing it.
 
 ### `getContext(prop)`
 
 Creates an effect that instructs the middleware to return a specific property of saga's context.
+
+### `delay(ms, [val])`
+
+Returns an effect descriptor to block execution for `ms` milliseconds and return `val` value.
+
+### `throttle(ms, pattern, saga, ...args)`
+
+Spawns a `saga` on an action dispatched to the Store that matches `pattern`. After spawning a task it's still accepting incoming actions into the underlying `buffer`, keeping at most 1 (the most recent one), but in the same time holding up with spawning new task for `ms` milliseconds (hence its name - `throttle`). Purpose of this is to ignore incoming actions for a given period of time while processing a task.
+
+- `ms: Number` - length of a time window in milliseconds during which actions will be ignored after the action starts processing
+
+- `pattern: String | Array | Function` - for more information see docs for [`take(pattern)`](#takepattern)
+
+- `saga: Function` - a Generator function
+
+- `args: Array<any>` - arguments to be passed to the started task. `throttle` will add the
+incoming action to the argument list (i.e. the action will be the last argument provided to `saga`)
+
+#### Example
+
+In the following example, we create a basic task `fetchAutocomplete`. We use `throttle` to
+start a new `fetchAutocomplete` task on dispatched `FETCH_AUTOCOMPLETE` action. However since `throttle` ignores consecutive `FETCH_AUTOCOMPLETE` for some time, we ensure that user won't flood our server with requests.
+
+```javascript
+import { call, put, throttle } from `redux-saga/effects`
+
+function* fetchAutocomplete(action) {
+  const autocompleteProposals = yield call(Api.fetchAutocomplete, action.text)
+  yield put({type: 'FETCHED_AUTOCOMPLETE_PROPOSALS', proposals: autocompleteProposals})
+}
+
+function* throttleAutocomplete() {
+  yield throttle(1000, 'FETCH_AUTOCOMPLETE', fetchAutocomplete)
+}
+```
+
+#### Notes
+
+`throttle` is a high-level API built using `take`, `fork` and `actionChannel`. Here is how the helper could be implemented using the low-level Effects
+
+```javascript
+const throttle = (ms, pattern, task, ...args) => fork(function*() {
+  const throttleChannel = yield actionChannel(pattern, buffers.sliding(1))
+
+  while (true) {
+    const action = yield take(throttleChannel)
+    yield fork(task, ...args, action)
+    yield delay(ms)
+  }
+})
+```
+
+### `throttle(ms, channel, saga, ...args)`
+You can also handel a channel as argument and the behaviour is the same as [`throttle(ms, pattern, saga, ..args)`](#throttlems-pattern-saga-args)
+
+### `debounce(ms, pattern, saga, ...args)`
+
+Spawns a `saga` on an action dispatched to the Store that matches `pattern`. Saga will be called after it stops taking `pattern` actions for `ms` milliseconds. Purpose of this is to prevent calling saga until the actions are settled off.
+
+- `ms: Number` - defines how many milliseconds should elapse since the last time `pattern` action was fired to call the `saga`
+
+- `pattern: String | Array | Function` - for more information see docs for [`take(pattern)`](#takepattern)
+
+- `saga: Function` - a Generator function
+
+- `args: Array<any>` - arguments to be passed to the started task. `debounce` will add the
+incoming action to the argument list (i.e. the action will be the last argument provided to `saga`)
+
+#### Example
+
+In the following example, we create a basic task `fetchAutocomplete`. We use `debounce` to
+delay calling `fetchAutocomplete` saga until we stop receive any `FETCH_AUTOCOMPLETE` events for at least `1000` ms.
+
+```javascript
+import { call, put, debounce } from `redux-saga/effects`
+
+function* fetchAutocomplete(action) {
+  const autocompleteProposals = yield call(Api.fetchAutocomplete, action.text)
+  yield put({type: 'FETCHED_AUTOCOMPLETE_PROPOSALS', proposals: autocompleteProposals})
+}
+
+function* debounceAutocomplete() {
+  yield debounce(1000, 'FETCH_AUTOCOMPLETE', fetchAutocomplete)
+}
+```
+
+#### Notes
+
+`debounce` is a high-level API built using `take`, `delay` and `fork`. Here is how the helper could be implemented using the low-level Effects
+
+```javascript
+const debounce = (ms, pattern, task, ...args) => fork(function*() {
+  while (true) {
+    let action = yield take(pattern)
+
+    while (true) {
+      const { debounced, _action } = yield race({
+        debounced: delay(ms),
+        _action: take(pattern)
+      })
+
+      if (debounced) {
+        yield fork(worker, ...args, action)
+        break
+      }
+
+      action = _action
+    }
+  }
+})
+```
+
+### `debounce(ms, channel, saga, ...args)`
+You can also handel a channel as argument and the behaviour is the same as [`debounce(ms, pattern, saga, ..args)`](#debouncems-pattern-saga-args)
+
+### `retry(maxTries, delay, fn, ...args)`
+Creates an Effect description that instructs the middleware to call the function `fn` with `args` as arguments.
+In case of failure will try to make another call after `delay` milliseconds, if a number of attempts < `maxTries`.
+
+- `maxTries: Number` - maximum calls count.
+- `delay: Number` - length of a time window in milliseconds between `fn` calls.
+- `fn: Function` - A Generator function, or normal function which either returns a Promise as a result, or any other value.
+- `args: Array<any>` - An array of values to be passed as arguments to `fn`
+
+#### Example
+
+In the following example, we create a basic task `retrySaga`. We use `retry` to try to fetch our API 3 times with 10 second interval. If `request` fails first time than `retry` will call `request` one more time while calls count less than 3.
+
+```javascript
+import { put, retry } from 'redux-saga/effects'
+import { request } from 'some-api';
+
+function* retrySaga(data) {
+  try {
+    const SECOND = 1000
+    const response = yield retry(3, 10 * SECOND, request, data)
+    yield put({ type: 'REQUEST_SUCCESS', payload: response })
+  } catch(error) {
+    yield put({ type: 'REQUEST_FAIL', payload: { error } })
+  }
+}
+```
+
+#### Notes
+`retry` is a high-level API built using `delay` and `call`. [Here is how the helper could be implemented using the low-level Effects](/docs/recipes/#retrying-xhr-calls)
 
 ## Effect combinators
 
@@ -837,7 +932,7 @@ The following example runs a race between two effects:
 import { take, call, race } from `redux-saga/effects`
 import fetchUsers from './path/to/fetchUsers'
 
-function* fetchUsersSaga {
+function* fetchUsersSaga() {
   const { response, cancel } = yield race({
     response: call(fetchUsers),
     cancel: take(CANCEL_FETCH)
@@ -857,7 +952,7 @@ When resolving a `race`, the middleware automatically cancels all the losing Eff
 
 ### `race([...effects]) (with Array)`
 
-The same as [`race(effects)`](#raceeffects) but let you to pass in an array of effects.
+The same as [`race(effects)`](#raceeffects) but lets you pass in an array of effects.
 
 #### Example
 
@@ -870,7 +965,7 @@ The following example runs a race between two effects:
 import { take, call, race } from `redux-saga/effects`
 import fetchUsers from './path/to/fetchUsers'
 
-function* fetchUsersSaga {
+function* fetchUsersSaga() {
   const [response, cancel] = yield race([
     call(fetchUsers),
     take(CANCEL_FETCH)
@@ -906,7 +1001,7 @@ function* mySaga() {
 
 ### `all(effects)`
 
-The same as [`all([...effects])`](#alleffects-parallel-effects) but let's you to pass in a dictionary object of effects with labels, just like [`race(effects)`](#alleffects)
+The same as [`all([...effects])`](#alleffects-parallel-effects) but lets you to pass in a dictionary object of effects with labels, just like [`race(effects)`](#alleffects)
 
 - `effects: Object` - a dictionary Object of the form {label: effect, ...}
 
@@ -962,7 +1057,7 @@ The Task interface specifies the result of running a Saga using `fork`, `middlew
     <td>task thrown error. `undefined` if task is still running</td>
   </tr>
   <tr>
-    <td>task.done</td>
+    <td>task.toPromise()</td>
     <td>
       a Promise which is either:
         <ul>
@@ -1009,13 +1104,15 @@ The Channel interface defines 3 methods: `take`, `put` and `close`
 Used to implement the buffering strategy for a channel. The Buffer interface defines 3 methods: `isEmpty`, `put` and `take`
 
 - `isEmpty()`: returns true if there are no messages on the buffer. A channel calls this method whenever a new taker is registered
-- `put(message)`: used to put new message in the buffer. Note the Buffer can chose to not store the message
+- `put(message)`: used to put new message in the buffer. Note the Buffer can choose to not store the message
 (e.g. a dropping buffer can drop any new message exceeding a given limit)
 - `take()` used to retrieve any buffered message. Note the behavior of this method has to be consistent with `isEmpty`
 
 ### SagaMonitor
 
-Used by the middleware to dispatch monitoring events. Actually the middleware dispatches 5 events:
+Used by the middleware to dispatch monitoring events. Actually the middleware dispatches 6 events:
+
+- When a root saga is started (via `runSaga` or `sagaMiddleware.run`) the middleware invokes `sagaMonitor.rootSagaStarted`
 
 - When an effect is triggered (via `yield someEffect`) the middleware invokes `sagaMonitor.effectTriggered`
 
@@ -1029,7 +1126,15 @@ Used by the middleware to dispatch monitoring events. Actually the middleware di
 
 Below the signature for each method
 
-- `effectTriggered(options)` : where options is an object with the following fields
+- `sagaMonitor.rootSagaStarted(options)` : where options is an object with the following fields
+
+  - `effectId` : Number - Unique ID assigned to this root saga execution
+
+  - `saga` : Function - The generator function that starts to run
+
+  - `args` : Array - The arguments passed to the generator function
+
+- `effectTriggered(options)`
 
   - `effectId` : Number - Unique ID assigned to the yielded effect
 
@@ -1037,8 +1142,8 @@ Below the signature for each method
   effects yielded inside will have the direct race/parallel effect as a parent. In case of a top-level effect, the
   parent will be the containing Saga
 
-  - `label` : String - In case of a `race` effect, all child effects will be assigned as label the corresponding
-  keys of the object passed to `race`
+  - `label` : String - In case of a `race`/`all` effect, all child effects will be assigned as label the corresponding
+  keys of the object passed to `race`/`all`
 
   - `effect` : Object - the yielded effect itself
 
@@ -1063,7 +1168,7 @@ Below the signature for each method
 
     - `action` : Object - The dispatched Redux action. If the action was dispatched by a Saga
     then the action will have a property `SAGA_ACTION` set to true (`SAGA_ACTION` can be imported from
-    `redux-saga/utils`).
+    `@redux-saga/symbols`).
 
 
 ## External API
@@ -1077,11 +1182,7 @@ connect a Saga to external input/output, other than store actions.
 `runSaga` returns a Task object. Just like the one returned from a `fork` effect.
 
 - `options: Object` - currently supported options are:
-
-  - `subscribe(callback): Function` - A function which accepts a callback and returns an `unsubscribe` function
-
-    - `callback(input): Function` - callback(provided by runSaga) used to subscribe to input events. `subscribe` must support registering multiple subscriptions.
-      - `input: any` - argument passed by `subscribe` to `callback` (see Notes below)
+  - `channel` - see docs for [`channel`](#channel) (preferably you should use `stdChannel` here)
 
   - `dispatch(output): Function` - used to fulfill `put` effects.
     - `output: any` -  argument provided by the Saga to the `put` Effect (see Notes below).
@@ -1090,9 +1191,10 @@ connect a Saga to external input/output, other than store actions.
 
   - `sagaMonitor` : [SagaMonitor](#sagamonitor) - see docs for [`createSagaMiddleware(options)`](#createsagamiddlewareoptions)
 
-  - `logger: Function` - see docs for [`createSagaMiddleware(options)`](#createsagamiddlewareoptions)
-
   - `onError: Function` - see docs for [`createSagaMiddleware(options)`](#createsagamiddlewareoptions)
+
+  - `context` : {} - see docs for [`createSagaMiddleware(options)`](#createsagamiddlewareoptions)
+  - `effectMiddlewares` : Function[] - see docs for [`createSagaMiddleware(options)`](#createsagamiddlewareoptions)
 
 - `saga: Function` - a Generator function
 
@@ -1100,16 +1202,17 @@ connect a Saga to external input/output, other than store actions.
 
 #### Notes
 
-The `{subscribe, dispatch}` is used to fulfill `take` and `put` Effects. This defines the Input/Output
+The `{channel, dispatch}` is used to fulfill `take` and `put` Effects. This defines the Input/Output
 interface of the Saga.
 
-`subscribe` is used to fulfill `take(PATTERN)` effects. It must call `callback` every time it
-has an input to dispatch (e.g. on every mouse click if the Saga is connected to DOM click events).
-Each time `subscribe` emits an input to its callbacks, if the Saga is blocked on a `take` effect, and
+`channel` is used to fulfill `take(PATTERN)` effects. Every time something gets put on the channel it's
+notifying all pending internal listeners. If the Saga is blocked on a `take` effect, and
 if the take pattern matches the currently incoming input, the Saga is resumed with that input.
 
 `dispatch` is used to fulfill `put` effects. Each time the Saga emits a `yield put(output)`, `dispatch`
 is invoked with output.
+
+An example how to use this API may be found [here](../UsingRunSaga.md).
 
 ## Utils
 
@@ -1126,7 +1229,7 @@ Creates channel that will subscribe to an event source using the `subscribe` met
 
 - `subscribe: Function` used to subscribe to the underlying event source. The function must return an unsubscribe function to terminate the subscription.
 
-- `buffer: Buffer` optional Buffer object to buffer messages on this channel. If not provided messages will not buffered
+- `buffer: Buffer` optional Buffer object to buffer messages on this channel. If not provided, messages will not be buffered
 on this channel.
 
 - `matcher: Function` optional predicate function (`any => Boolean`) to filter incoming messages. Only messages accepted by
@@ -1167,7 +1270,7 @@ Provides some common buffers
 
 - `buffers.none()`: no buffering, new messages will be lost if there are no pending takers
 
-- `buffers.fixed(limit)`: new messages will be buffered up to `limit`. Overflow will raises an Error. Omitting a `limit` value will result in a limit of 10.
+- `buffers.fixed(limit)`: new messages will be buffered up to `limit`. Overflow will raise an Error. Omitting a `limit` value will result in a limit of 10.
 
 - `buffers.expanding(initialSize)`: like `fixed` but Overflow will cause the buffer to expand dynamically.
 
@@ -1175,9 +1278,6 @@ Provides some common buffers
 
 - `buffers.sliding(limit)`: same as `fixed` but Overflow will insert the new message at the end and drop the oldest message in the buffer.
 
-### `delay(ms, [val])`
-
-Returns a effect descriptor to block execution for `ms` milliseconds and return `val` value.
 
 ### `cloneableGenerator(generatorFunc)`
 
@@ -1187,9 +1287,10 @@ For testing purpose only.
 
 #### Example
 
-This is useful when you want to test different branch of a saga without having to replay the actions that lead to it.
+This is useful when you want to test a different branch of a saga without having to replay the actions that lead to it.
 
 ```javascript
+import { cloneableGenerator } from '@redux-saga/testing-utils';
 
 function* oddOrEven() {
   // some stuff are done here
@@ -1240,7 +1341,7 @@ test('my oddOrEven saga', assert => {
     a.equal(
       data.gen.next(2).value,
       'even',
-      'it should yield "event"'
+      'it should yield "even"'
     );
 
     a.equal(
@@ -1290,11 +1391,13 @@ For testing purposes only.
 | takeLatest           | No                                                          |
 | takeLeading          | No                                                          |
 | throttle             | No                                                          |
+| debounce             | No                                                          |
+| retry                | Yes                                                         |
 | take                 | Yes                                                         |
 | take(channel)        | Sometimes (see API reference)                               |
-| take.maybe           | Yes                                                         |
+| takeMaybe            | Yes                                                         |
 | put                  | No                                                          |
-| put.resolve          | Yes                                                         |
+| putResolve           | Yes                                                         |
 | put(channel, action) | No                                                          |
 | call                 | Yes                                                         |
 | apply                | Yes                                                         |

@@ -1,10 +1,15 @@
-import { CANCEL, MULTICAST, SAGA_ACTION, TASK } from './symbols'
+import _extends from '@babel/runtime/helpers/extends'
+import * as is from '@redux-saga/is'
+import { SAGA_LOCATION, SAGA_ACTION, TASK_CANCEL, TERMINATE } from '@redux-saga/symbols'
 
 export const konst = v => () => v
 export const kTrue = konst(true)
 export const kFalse = konst(false)
 export const noop = () => {}
 export const identity = v => v
+
+const hasSymbol = typeof Symbol === 'function'
+export const asyncIteratorSymbol = hasSymbol && Symbol.asyncIterator ? Symbol.asyncIterator : '@@asyncIterator'
 
 export function check(value, predicate, error) {
   if (!predicate(value)) {
@@ -17,54 +22,23 @@ export function hasOwn(object, property) {
   return is.notUndef(object) && hasOwnProperty.call(object, property)
 }
 
-export const is = {
-  undef: v => v === null || v === undefined,
-  notUndef: v => v !== null && v !== undefined,
-  func: f => typeof f === 'function',
-  number: n => typeof n === 'number',
-  string: s => typeof s === 'string',
-  array: Array.isArray,
-  object: obj => obj && !is.array(obj) && typeof obj === 'object',
-  promise: p => p && is.func(p.then),
-  iterator: it => it && is.func(it.next) && is.func(it.throw),
-  iterable: it => (it && is.func(Symbol) ? is.func(it[Symbol.iterator]) : is.array(it)),
-  task: t => t && t[TASK],
-  observable: ob => ob && is.func(ob.subscribe),
-  buffer: buf => buf && is.func(buf.isEmpty) && is.func(buf.take) && is.func(buf.put),
-  pattern: pat => pat && (is.string(pat) || is.symbol(pat) || is.func(pat) || is.array(pat)),
-  channel: ch => ch && is.func(ch.take) && is.func(ch.close),
-  stringableFunc: f => is.func(f) && hasOwn(f, 'toString'),
-  symbol: sym => Boolean(sym) && typeof Symbol === 'function' && sym.constructor === Symbol && sym !== Symbol.prototype,
-  multicast: ch => is.channel(ch) && ch[MULTICAST],
+export const assignWithSymbols = (target, source) => {
+  _extends(target, source)
+
+  if (Object.getOwnPropertySymbols) {
+    Object.getOwnPropertySymbols(source).forEach(s => {
+      target[s] = source[s]
+    })
+  }
 }
 
-export const object = {
-  assign(target, source) {
-    for (let i in source) {
-      if (hasOwn(source, i)) {
-        target[i] = source[i]
-      }
-    }
-  },
-}
+export const flatMap = (mapper, arr) => [].concat(...arr.map(mapper))
 
 export function remove(array, item) {
   const index = array.indexOf(item)
   if (index >= 0) {
     array.splice(index, 1)
   }
-}
-
-export const array = {
-  from(obj) {
-    const arr = Array(obj.length)
-    for (let i in obj) {
-      if (hasOwn(obj, i)) {
-        arr[i] = obj[i]
-      }
-    }
-    return arr
-  },
 }
 
 export function once(fn) {
@@ -77,57 +51,6 @@ export function once(fn) {
     fn()
   }
 }
-
-export function deferred(props = {}) {
-  let def = { ...props }
-  const promise = new Promise((resolve, reject) => {
-    def.resolve = resolve
-    def.reject = reject
-  })
-  def.promise = promise
-  return def
-}
-
-export function arrayOfDeferred(length) {
-  const arr = []
-  for (let i = 0; i < length; i++) {
-    arr.push(deferred())
-  }
-  return arr
-}
-
-export function delay(ms, val = true) {
-  let timeoutId
-  const promise = new Promise(resolve => {
-    timeoutId = setTimeout(() => resolve(val), ms)
-  })
-
-  promise[CANCEL] = () => clearTimeout(timeoutId)
-
-  return promise
-}
-
-export function createMockTask() {
-  let running = true
-  let result, error
-
-  return {
-    [TASK]: true,
-    isRunning: () => running,
-    result: () => result,
-    error: () => error,
-
-    setRunning: b => (running = b),
-    setResult: r => (result = r),
-    setError: e => (error = e),
-  }
-}
-
-export function autoInc(seed = 0) {
-  return () => ++seed
-}
-
-export const uid = autoInc()
 
 const kThrow = err => {
   throw err
@@ -142,29 +65,18 @@ export function makeIterator(next, thro = kThrow, name = 'iterator') {
   return iterator
 }
 
-/**
-  Print error in a useful way whether in a browser environment
-  (with expandable error stack traces), or in a node.js environment
-  (text-only log output)
- **/
-export function log(level, message, error = '') {
+export function logError(error, { sagaStack }) {
   /*eslint-disable no-console*/
-  if (typeof window === 'undefined') {
-    console.log(`redux-saga ${level}: ${message}\n${(error && error.stack) || error}`)
-  } else {
-    console[level](message, error)
-  }
+  console.error(error)
+  console.error(sagaStack)
 }
 
 export function deprecate(fn, deprecationWarning) {
   return (...args) => {
-    if (process.env.NODE_ENV === 'development') log('warn', deprecationWarning)
+    if (process.env.NODE_ENV !== 'production') console.warn(deprecationWarning)
     return fn(...args)
   }
 }
-
-export const updateIncentive = (deprecated, preferred) =>
-  `${deprecated} has been deprecated in favor of ${preferred}, please update your code`
 
 export const internalErr = err =>
   new Error(
@@ -178,23 +90,85 @@ export const internalErr = err =>
 export const createSetContextWarning = (ctx, props) =>
   `${ctx ? ctx + '.' : ''}setContext(props): argument ${props} is not a plain object`
 
-export const wrapSagaDispatch = dispatch => action =>
-  dispatch(Object.defineProperty(action, SAGA_ACTION, { value: true }))
+const FROZEN_ACTION_ERROR = `You can't put (a.k.a. dispatch from saga) frozen actions.
+We have to define a special non-enumerable property on those actions for scheduling purposes.
+Otherwise you wouldn't be able to communicate properly between sagas & other subscribers (action ordering would become far less predictable).
+If you are using redux and you care about this behaviour (frozen actions),
+then you might want to switch to freezing actions in a middleware rather than in action creator.
+Example implementation:
 
-export const cloneableGenerator = generatorFunc => (...args) => {
-  const history = []
-  const gen = generatorFunc(...args)
-  return {
-    next: arg => {
-      history.push(arg)
-      return gen.next(arg)
-    },
-    clone: () => {
-      const clonedGen = cloneableGenerator(generatorFunc)(...args)
-      history.forEach(arg => clonedGen.next(arg))
-      return clonedGen
-    },
-    return: value => gen.return(value),
-    throw: exception => gen.throw(exception),
+const freezeActions = store => next => action => next(Object.freeze(action))
+`
+
+// creates empty, but not-holey array
+export const createEmptyArray = n => Array.apply(null, new Array(n))
+
+export const wrapSagaDispatch = dispatch => action => {
+  if (process.env.NODE_ENV !== 'production') {
+    check(action, ac => !Object.isFrozen(ac), FROZEN_ACTION_ERROR)
   }
+  return dispatch(Object.defineProperty(action, SAGA_ACTION, { value: true }))
+}
+
+export const shouldTerminate = res => res === TERMINATE
+export const shouldCancel = res => res === TASK_CANCEL
+export const shouldComplete = res => shouldTerminate(res) || shouldCancel(res)
+
+export function createAllStyleChildCallbacks(shape, parentCallback) {
+  const keys = Object.keys(shape)
+  const totalCount = keys.length
+
+  if (process.env.NODE_ENV !== 'production') {
+    check(totalCount, c => c > 0, 'createAllStyleChildCallbacks: get an empty array or object')
+  }
+
+  let completedCount = 0
+  let completed
+  const results = is.array(shape) ? createEmptyArray(totalCount) : {}
+  const childCallbacks = {}
+
+  function checkEnd() {
+    if (completedCount === totalCount) {
+      completed = true
+      parentCallback(results)
+    }
+  }
+
+  keys.forEach(key => {
+    const chCbAtKey = (res, isErr) => {
+      if (completed) {
+        return
+      }
+      if (isErr || shouldComplete(res)) {
+        parentCallback.cancel()
+        parentCallback(res, isErr)
+      } else {
+        results[key] = res
+        completedCount++
+        checkEnd()
+      }
+    }
+    chCbAtKey.cancel = noop
+    childCallbacks[key] = chCbAtKey
+  })
+
+  parentCallback.cancel = () => {
+    if (!completed) {
+      completed = true
+      keys.forEach(key => childCallbacks[key].cancel())
+    }
+  }
+
+  return childCallbacks
+}
+
+export function getMetaInfo(fn) {
+  return {
+    name: fn.name || 'anonymous',
+    location: getLocation(fn),
+  }
+}
+
+export function getLocation(instrumented) {
+  return instrumented[SAGA_LOCATION]
 }

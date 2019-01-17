@@ -1,35 +1,24 @@
 {
-  "name": "redux-saga",
-  "version": "1.0.0-beta.1",
+  "name": "@redux-saga/core",
+  "version": "1.0.0-rc.0",
   "description": "Saga middleware for Redux to handle Side Effects",
-  "main": "lib/index.js",
-  "module": "es/index.js",
-  "jsnext:main": "es/index.js",
-  "unpkg": "dist/redux-saga.min.js",
+  "main": "./dist/redux-saga-core.cjs.js",
+  "module": "./dist/redux-saga-core.esm.js",
   "files": [
-    "es",
-    "lib",
     "dist",
     "effects",
-    "utils",
     "*.d.ts"
   ],
   "scripts": {
-    "test": "cross-env NODE_ENV=test babel-node test/index.js | tap-spec",
-    "prebundlesize": "npm run build:umd:prod",
+    "test": "jest",
+    "prebundlesize": "npm run build",
     "bundlesize": "bundlesize",
-    "clean": "rimraf dist es lib",
-    "build:umd:dev": "cross-env BABEL_ENV=es NODE_ENV=development rollup -c -i src/index.js -o dist/redux-saga.js",
-    "build:umd:prod": "cross-env BABEL_ENV=es NODE_ENV=production rollup -c -i src/index.js -o dist/redux-saga.min.js",
-    "build:cjs": "cross-env BABEL_ENV=cjs babel src --out-dir lib",
-    "build:es": "cross-env BABEL_ENV=es babel src --out-dir es",
-    "build": "npm run clean && run-p build:**",
+    "clean": "rimraf dist",
+    "prebuild": "npm run clean",
+    "build": "rollup -c",
+    "postbuild": "node ./scripts/createProxyCjsEntries.js",
     "prepare": "npm run build",
-    "prepush": "npm run test",
-    "prerelease": "npm run test && npm run prepare",
-    "release:patch": "npm run prerelease && npm version patch && npm publish && git push --follow-tags",
-    "release:minor": "npm run prerelease && npm version minor && npm publish && git push --follow-tags",
-    "release:major": "npm run prerelease && npm version major && npm publish && git push --follow-tags"
+    "preversion": "npm test"
   },
   "repository": "https://github.com/redux-saga/redux-saga/tree/master/packages/core",
   "keywords": [
@@ -40,15 +29,12 @@
     "effects",
     "side effects"
   ],
-  "bundlesize": [
-    {
-      "path": "./dist/redux-saga.min.js",
-      "maxSize": "7.5 Kb"
-    }
-  ],
   "author": "Yassine ELOUAFI <yelouafi@gmail.com>",
   "contributors": [
-    "Mateusz Burzyński <mateuszburzynski@gmail.com> (https://github.com/Andarist)"
+    "Mateusz Burzyński <mateuszburzynski@gmail.com> (https://github.com/Andarist)",
+    "Mikhail Shustov <restrry@gmail.com> (https://github.com/restrry)",
+    "Shi Feichao <842351815@qq.com> (https://github.com/shinima)",
+    "Daniel Lytkin <dan.lytkin@gmail.com (https://github.com/aikoven)"
   ],
   "license": "MIT",
   "bugs": {
@@ -56,44 +42,35 @@
   },
   "homepage": "https://redux-saga.js.org/",
   "dependencies": {
-    "redux": ">=0.10 <5"
+    "@babel/runtime": "^7.0.0",
+    "@redux-saga/deferred": "^1.0.0-rc.0",
+    "@redux-saga/delay-p": "^1.0.0-rc.0",
+    "@redux-saga/is": "^1.0.0-rc.0",
+    "@redux-saga/symbols": "^1.0.0-rc.0",
+    "@redux-saga/types": "^1.0.0-rc.0",
+    "redux": ">=0.10 <5",
+    "typescript-tuple": "^2.1.0"
   },
   "devDependencies": {
-    "@babel/cli": "7.0.0-beta.39",
-    "@babel/core": "7.0.0-beta.39",
-    "@babel/node": "7.0.0-beta.39",
-    "@babel/polyfill": "7.0.0-beta.39",
-    "@babel/preset-env": "7.0.0-beta.39",
-    "@babel/preset-react": "7.0.0-beta.39",
-    "@babel/preset-stage-2": "7.0.0-beta.39",
-    "babel-plugin-annotate-pure-calls": "babel7",
+    "@babel/core": "^7.0.0",
+    "@babel/plugin-proposal-object-rest-spread": "^7.0.0",
+    "@babel/plugin-transform-runtime": "^7.0.0",
+    "@babel/polyfill": "^7.0.0",
+    "@babel/preset-env": "^7.0.0",
+    "babel-7-jest": "^21.3.3",
+    "babel-plugin-annotate-pure-calls": "^0.3.0",
     "bundlesize": "^0.11.0",
-    "cross-env": "^1.0.8",
-    "husky": "^0.13.3",
-    "lint-staged": "^3.4.2",
-    "lolex": "^1.5.2",
+    "jest": "^23.5.0",
+    "lerna-alias": "^3.0.2",
     "mitt": "^1.1.2",
-    "npm-run-all": "^4.0.2",
-    "prettier": "^1.4.1",
     "rimraf": "^2.4.3",
-    "rollup": "^0.50.0",
-    "rollup-plugin-babel": "4.0.0-beta.1",
-    "rollup-plugin-node-resolve": "^3.0.0",
+    "rollup": "^1.0.2",
+    "rollup-plugin-alias": "^1.4.0",
+    "rollup-plugin-babel": "5.0.0-alpha.0",
+    "rollup-plugin-node-resolve": "^4.0.0",
     "rollup-plugin-replace": "^1.1.1",
-    "rollup-plugin-uglify": "^2.0.1",
-    "tap-spec": "^4.1.1",
-    "tape": "^4.2.2",
-    "typescript": "~2.6.0",
+    "typescript": "^3.2.1",
     "typings-tester": "^0.2.2"
   },
-  "typings": "./index.d.ts",
-  "npmName": "redux-saga",
-  "npmFileMap": [
-    {
-      "basePath": "/dist/",
-      "files": [
-        "*.js"
-      ]
-    }
-  ]
+  "typings": "./index.d.ts"
 }

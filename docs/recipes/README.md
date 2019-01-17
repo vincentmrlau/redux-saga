@@ -19,6 +19,9 @@ function* watchInput() {
 By using this helper the `watchInput` won't start a new `handleInput` task for 500ms, but in the same time it will still be accepting the latest `INPUT_CHANGED` actions into its underlaying `buffer`, so it'll miss all `INPUT_CHANGED` actions happening in-between. This ensures that the Saga will take at most one `INPUT_CHANGED` action during each period of 500ms and still be able to process trailing action.
 
 ## Debouncing
+From redux-saga@v1 [debounce](../api/README.md#debouncems-pattern-saga-args) is built-in effect.
+
+Let's consider how the effect could be implemented as a combination of other base effects.
 
 To debounce a sequence, put the built-in `delay` helper in the forked task:
 
@@ -65,8 +68,11 @@ function* watchInput() {
 ```
 
 ## Retrying XHR calls
+From redux-saga@v1 [retry](../api/README.md#retrymaxtries-delay-fn-args) is built-in effect.
 
-To retry a XHR call for a specific amount of times, use a for loop with a delay:
+Let's consider how the effect could be implemented as a combination of other base effects.
+
+To retry an XHR call for a specific amount of times, use a for loop with a delay:
 
 ```javascript
 
@@ -109,7 +115,7 @@ export default function* updateResource() {
 
 In the above example the `apiRequest` will be retried for 5 times, with a delay of 2 seconds in between. After the 5th failure, the exception thrown will get caught by the parent saga, which will dispatch the `UPDATE_ERROR` action.
 
-If you want unlimited retries, then the `for` loop can be replaced with a `while (true)`. Also instead of `take` you can use `takeLatest`, so only the last request will be retried. By adding an `UPDATE_RETRY` action in the error handling, we can inform the user that the update was not successfull but it will be retried.
+If you want unlimited retries, then the `for` loop can be replaced with a `while (true)`. Also instead of `take` you can use `takeLatest`, so only the last request will be retried. By adding an `UPDATE_RETRY` action in the error handling, we can inform the user that the update was not successful but it will be retried.
 
 ```javascript
 import { delay } from 'redux-saga/effects'
@@ -154,7 +160,7 @@ creates a higher order reducer to do most of the heavy lifting for the developer
 
 However, this method comes with overhead because it stores references to the previous state(s) of the application.
 
-Using redux-saga's `delay` and `race` we can implement a simple, one-time undo without enhancing
+Using redux-saga's `delay` and `race` we can implement a basic, one-time undo without enhancing
 our reducer or storing the previous state.
 
 ```javascript

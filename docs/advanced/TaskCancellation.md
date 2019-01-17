@@ -4,7 +4,7 @@ We saw already an example of cancellation in the [Non blocking calls](NonBlockin
 
 Once a task is forked, you can abort its execution using `yield cancel(task)`.
 
-To see how it works, let's consider a simple example: A background sync which can be started/stopped by some UI commands. Upon receiving a `START_BACKGROUND_SYNC` action, we fork a background task that will periodically sync some data from a remote server.
+To see how it works, let's consider a basic example: A background sync which can be started/stopped by some UI commands. Upon receiving a `START_BACKGROUND_SYNC` action, we fork a background task that will periodically sync some data from a remote server.
 
 The task will execute continually until a `STOP_BACKGROUND_SYNC` action is triggered. Then we cancel the background task and wait again for the next `START_BACKGROUND_SYNC` action.
 
@@ -40,7 +40,7 @@ function* main() {
 }
 ```
 
-In the above example, cancellation of `bgSyncTask` will cause the Generator to jump to the finally block. Here you can use `yield cancelled()` to check if the Generator has been cancelled or not.
+In the above example, cancellation of `bgSyncTask` will use [Generator.prototype.return](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator/return) to make the Generator jump directly to the finally block. Here you can use `yield cancelled()` to check if the Generator has been cancelled or not.
 
 Cancelling a running task will also cancel the current Effect where the task is blocked at the moment of cancellation.
 
@@ -80,7 +80,7 @@ There is another direction where the cancellation propagates to as well: the joi
 When `fork` is called it starts the task in the background and also returns task object like we have learned previously. When testing this we have to use utility function `createMockTask`. Object returned from this function should be passed to next `next` call after fork test. Mock task can then be passed to `cancel` for example. Here is test for `main` generator which is on top of this page.
 
 ```javascript
-import { createMockTask } from 'redux-saga/utils';
+import { createMockTask } from '@redux-saga/testing-utils';
 
 describe('main', () => {
   const generator = main();
